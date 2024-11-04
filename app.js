@@ -9,34 +9,11 @@ const { MongoClient, ServerApiVersion } = require('mongodb');
 
 const app = express();
 
-// Define allowed origins
-const allowedOrigins = [
-    'http://localhost:3000',
-    'https://relationest-frontend.vercel.app'
-];
-
-// CORS options with more specific configuration
-const corsOptions = {
-    origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl requests)
-        if (!origin) return callback(null, true);
-
-        if (allowedOrigins.indexOf(origin) !== -1) {
-            callback(null, true);
-        } else {
-            console.log('Blocked by CORS:', origin);
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    exposedHeaders: ['Content-Range', 'X-Content-Range'],
-    maxAge: 600 // Increase preflight cache to 10 minutes
-};
-
-// Apply CORS middleware before other middlewares
-app.use(cors(corsOptions));
+const cors = require('cors');
+app.use(cors({
+    origin: process.env.FRONTEND_URL,
+    credentials: true
+}));
 
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
