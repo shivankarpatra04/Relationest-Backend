@@ -49,7 +49,7 @@ initializeDatabase().catch(console.dir);
 // Define allowed origins
 const allowedOrigins = [
     'http://localhost:3000',  // Local development
-    'https://relationest-jy7i.vercel.app'  // Your Vercel deployment
+    'https://relationest-backend.vercel.app'  // Your Vercel deployment
 ];
 
 // CORS options
