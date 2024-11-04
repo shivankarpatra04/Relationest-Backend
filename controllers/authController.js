@@ -8,7 +8,7 @@ exports.register = async (req, res) => {
         const user = new User({ username, email, password });
         await user.save();
 
-        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'your-fallback-secret-key', { expiresIn: '1h' });
 
         res.status(201).json({ token, userId: user._id });
     } catch (error) {
@@ -31,7 +31,7 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
 
-        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'your-fallback-secret-key', { expiresIn: '1h' });
 
         res.json({ token, userId: user._id });
     } catch (error) {
