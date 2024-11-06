@@ -246,17 +246,24 @@ chatController.getAIResponse = async (prompt, apiKey = {}) => {
 // Function to call Gemini API
 async function callGeminiAPI(prompt, apiKey) {
     try {
-        const response = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`, {
-            contents: [{ parts: [{ text: prompt }] }]
-        }, {
-            headers: {
-                'Content-Type': 'application/json'
+        const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateText?key=${apiKey}`, // Corrected endpoint
+            {
+                prompt: {
+                    text: prompt,  // Corrected structure of the prompt
+                },
+            },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                }
             }
-        });
+        );
 
-        return response.data.candidates[0].content.parts[0].text;
+        // Adjusted data path based on the API response structure
+        return response.data.candidates[0].output;
     } catch (error) {
-        console.error('Error calling Gemini API:', error);
+        console.error('Error calling Gemini API:', error.response ? error.response.data : error.message);
         throw new Error('Failed to get response from Gemini API');
     }
 }
