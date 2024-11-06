@@ -256,6 +256,7 @@ async function callGeminiAPI(prompt, apiKey) {
             {
                 headers: {
                     'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`  // Optional if API requires it
                 }
             }
         );
