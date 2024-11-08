@@ -4,6 +4,14 @@ const generatePrompt = require('../utils/generatePrompt');
 
 const chatController = {};
 
+// Helper function to determine which AI service to use
+const determineAIService = (apiKey = {}) => {
+    if (apiKey.openai) return 'openai';
+    if (apiKey.anthropic) return 'anthropic';
+    if (apiKey.gemini) return 'gemini';
+    return 'defaultGemini'; // Use environment variable Gemini key
+};
+
 // Save chat to database
 chatController.saveChat = async (req, res) => {
     try {
@@ -78,20 +86,18 @@ chatController.deleteChat = async (req, res) => {
     }
 };
 
-// Submit initial chat message to AI
+// Updated submitChat function with enhanced API key handling
 chatController.submitChat = async (req, res) => {
     try {
         console.log('submitChat function called');
         const { partnerName, concern, message, apiKey, name, age } = req.body;
         const userId = req.user.id;
 
-        // Generate prompt using the imported function
         const prompt = generatePrompt(name, partnerName, age, concern);
 
-        // Get AI response using provided API key or default to Gemini
-        const aiResponse = await chatController.getAIResponse(prompt, apiKey || { gemini: process.env.GEMINI_API_KEY });
+        // Get AI response using provided API keys or default to Gemini
+        const aiResponse = await chatController.getAIResponse(prompt, apiKey);
 
-        // Create a new chat entry and add user message and AI response to the messages array
         const chat = new Chat({
             userId,
             partnerName,
@@ -102,22 +108,21 @@ chatController.submitChat = async (req, res) => {
             ]
         });
 
-        // Save the chat document
         await chat.save();
-
-        // Return the stored chat with both messages
         res.status(201).json(chat);
     } catch (error) {
         console.error('Submit chat error:', error);
-        res.status(500).json({ message: 'Error submitting chat' });
+        res.status(500).json({
+            message: 'Error submitting chat',
+            error: error.message
+        });
     }
 };
 
-// Handle follow-up messages from the user
+// Updated continueChat function with enhanced API key handling
 chatController.continueChat = async (req, res) => {
     try {
         console.log('continueChat function called');
-
         const { chatId, followUpMessage, apiKey } = req.body;
         const userId = req.user.id;
 
@@ -132,22 +137,23 @@ chatController.continueChat = async (req, res) => {
         }
 
         chat.messages.push({ fromUser: true, text: followUpMessage });
-
         const fullConversation = chat.messages.map((msg) => msg.text).join('\n');
 
-        const aiResponse = await chatController.getAIResponse(fullConversation, apiKey || { gemini: process.env.GEMINI_API_KEY });
+        // Use the provided API keys or default to Gemini
+        const aiResponse = await chatController.getAIResponse(fullConversation, apiKey);
 
         chat.messages.push({ fromUser: false, text: aiResponse });
-
         await chat.save();
 
         res.json({ aiResponse });
     } catch (error) {
         console.error('Continue chat error:', error);
-        res.status(500).json({ message: 'Error continuing chat' });
+        res.status(500).json({
+            message: 'Error continuing chat',
+            error: error.message
+        });
     }
 };
-
 // Find chat by chatId
 chatController.findChatById = async (req, res) => {
     try {
@@ -225,83 +231,115 @@ chatController.deleteChatById = async (req, res) => {
     }
 };
 
+// Updated getAIResponse function with better error handling and service determination
 chatController.getAIResponse = async (prompt, apiKey = {}) => {
     try {
-        // Try OpenAI if provided
-        if (apiKey.openai) {
-            return await callOpenAIAPI(prompt, apiKey.openai);
+        const service = determineAIService(apiKey);
+
+        switch (service) {
+            case 'openai':
+                return await callOpenAIAPI(prompt, apiKey.openai);
+            case 'anthropic':
+                return await callAnthropicAPI(prompt, apiKey.anthropic);
+            case 'gemini':
+                return await callGeminiAPI(prompt, apiKey.gemini);
+            case 'defaultGemini':
+                if (!process.env.GEMINI_API_KEY) {
+                    throw new Error('No Gemini API key found in environment variables');
+                }
+                return await callGeminiAPI(prompt, process.env.GEMINI_API_KEY);
+            default:
+                throw new Error('No valid AI service configuration found');
         }
-        // Try Anthropic if provided
-        if (apiKey.anthropic) {
-            return await callAnthropicAPI(prompt, apiKey.anthropic);
-        }
-        // Default to Gemini - use provided key or fallback to environment variable
-        return await callGeminiAPI(prompt, apiKey.gemini || process.env.GEMINI_API_KEY);
     } catch (error) {
         console.error('Error in getAIResponse:', error);
-        throw new Error('Failed to get AI response');
+        throw new Error(`Failed to get AI response: ${error.message}`);
     }
 };
 
-// Function to call Gemini API
+// Updated API calling functions with better error handling
 async function callGeminiAPI(prompt, apiKey) {
     try {
-        const response = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`, {
-            contents: [{ parts: [{ text: prompt }] }]
-        }, {
-            headers: {
-                'Content-Type': 'application/json'
+        const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
+            {
+                contents: [{ parts: [{ text: prompt }] }]
+            },
+            {
+                headers: {
+                    'Content-Type': 'application/json'
+                }
             }
-        });
+        );
+
+        if (!response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+            throw new Error('Invalid response format from Gemini API');
+        }
 
         return response.data.candidates[0].content.parts[0].text;
     } catch (error) {
         console.error('Error calling Gemini API:', error);
-        throw new Error('Failed to get response from Gemini API');
+        throw new Error(`Gemini API error: ${error.message}`);
     }
 }
 
-// Function to call OpenAI API
 async function callOpenAIAPI(prompt, apiKey) {
     try {
-        const response = await axios.post('https://api.openai.com/v1/completions', {
-            model: 'text-davinci-003',
-            prompt,
-            max_tokens: 150
-        }, {
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
+        const response = await axios.post(
+            'https://api.openai.com/v1/completions',
+            {
+                model: 'text-davinci-003',
+                prompt,
+                max_tokens: 150
+            },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                }
             }
-        });
+        );
+
+        if (!response.data?.choices?.[0]?.text) {
+            throw new Error('Invalid response format from OpenAI API');
+        }
+
         return response.data.choices[0].text.trim();
     } catch (error) {
         console.error('Error calling OpenAI API:', error);
-        throw new Error('Failed to get response from OpenAI API');
+        throw new Error(`OpenAI API error: ${error.message}`);
     }
 }
 
-// Function to call Anthropic API
 async function callAnthropicAPI(userMessage, apiKey) {
     try {
-        const response = await axios.post('https://api.anthropic.com/v1/messages', {
-            model: "claude-3-sonnet-20240229",
-            messages: [{
-                role: "user",
-                content: userMessage
-            }],
-            max_tokens: 1024
-        }, {
-            headers: {
-                'Content-Type': 'application/json',
-                'anthropic-version': '2023-06-01',
-                'x-api-key': apiKey
+        const response = await axios.post(
+            'https://api.anthropic.com/v1/messages',
+            {
+                model: "claude-3-sonnet-20240229",
+                messages: [{
+                    role: "user",
+                    content: userMessage
+                }],
+                max_tokens: 1024
+            },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'anthropic-version': '2023-06-01',
+                    'x-api-key': apiKey
+                }
             }
-        });
+        );
+
+        if (!response.data?.content?.[0]?.text) {
+            throw new Error('Invalid response format from Anthropic API');
+        }
+
         return response.data.content[0].text;
     } catch (error) {
         console.error('Error calling Anthropic API:', error);
-        throw new Error('Failed to get response from Anthropic API');
+        throw new Error(`Anthropic API error: ${error.message}`);
     }
 }
 
