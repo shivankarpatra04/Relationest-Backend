@@ -122,32 +122,97 @@ chatController.submitChat = async (req, res) => {
 // Updated continueChat function with enhanced API key handling
 chatController.continueChat = async (req, res) => {
     try {
-        console.log('continueChat function called');
+        console.log('continueChat function called with body:', req.body);
         const { chatId, followUpMessage, apiKey } = req.body;
-        const userId = req.user.id;
+        const userId = req.user?.id;
 
+        // Input validation
+        if (!chatId) {
+            return res.status(400).json({ message: 'Chat ID is required' });
+        }
+
+        if (!followUpMessage) {
+            return res.status(400).json({ message: 'Follow-up message is required' });
+        }
+
+        if (!userId) {
+            return res.status(401).json({ message: 'User authentication required' });
+        }
+
+        // Find the chat and validate ownership
         const chat = await Chat.findById(chatId);
 
         if (!chat) {
+            console.log('Chat not found with ID:', chatId);
             return res.status(404).json({ message: 'Chat not found' });
         }
 
         if (chat.userId.toString() !== userId) {
+            console.log('Unauthorized access attempt - User ID mismatch');
             return res.status(403).json({ message: 'Unauthorized access to this chat' });
         }
 
-        chat.messages.push({ fromUser: true, text: followUpMessage });
-        const fullConversation = chat.messages.map((msg) => msg.text).join('\n');
+        // Add the new user message
+        chat.messages.push({
+            fromUser: true,
+            text: followUpMessage,
+            timestamp: new Date()
+        });
 
-        // Use the provided API keys or default to Gemini
-        const aiResponse = await chatController.getAIResponse(fullConversation, apiKey);
+        // Prepare conversation history for AI
+        const fullConversation = chat.messages.map(msg =>
+            `${msg.fromUser ? 'User' : 'Assistant'}: ${msg.text}`
+        ).join('\n');
 
-        chat.messages.push({ fromUser: false, text: aiResponse });
+        // Get AI response with error handling
+        let aiResponse;
+        try {
+            aiResponse = await chatController.getAIResponse(fullConversation, apiKey);
+        } catch (error) {
+            console.error('AI Response Error:', error);
+            return res.status(500).json({
+                message: 'Failed to get AI response',
+                error: error.message
+            });
+        }
+
+        // Add AI response to chat
+        chat.messages.push({
+            fromUser: false,
+            text: aiResponse,
+            timestamp: new Date()
+        });
+
+        // Update chat's lastUpdated timestamp
+        chat.updatedAt = new Date();
+
+        // Save the updated chat
         await chat.save();
 
-        res.json({ aiResponse });
+        // Return success response with full chat data
+        res.json({
+            success: true,
+            aiResponse,
+            chatId: chat._id,
+            updatedAt: chat.updatedAt,
+            messageCount: chat.messages.length
+        });
+
     } catch (error) {
         console.error('Continue chat error:', error);
+        // Specific error handling
+        if (error.name === 'CastError') {
+            return res.status(400).json({
+                message: 'Invalid chat ID format',
+                error: error.message
+            });
+        }
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({
+                message: 'Invalid data format',
+                error: error.message
+            });
+        }
         res.status(500).json({
             message: 'Error continuing chat',
             error: error.message
