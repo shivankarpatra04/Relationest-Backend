@@ -282,19 +282,23 @@ async function callOpenAIAPI(prompt, apiKey) {
 }
 
 // Function to call Anthropic API
-async function callAnthropicAPI(prompt, apiKey) {
+async function callAnthropicAPI(userMessage, apiKey) {
     try {
-        const response = await axios.post('https://api.anthropic.com/v1/complete', {
-            prompt,
-            model: "claude-2",
-            max_tokens_to_sample: 150
+        const response = await axios.post('https://api.anthropic.com/v1/messages', {
+            model: "claude-3-sonnet-20240229",
+            messages: [{
+                role: "user",
+                content: userMessage
+            }],
+            max_tokens: 1024
         }, {
             headers: {
                 'Content-Type': 'application/json',
-                'X-API-Key': apiKey
+                'anthropic-version': '2023-06-01',
+                'x-api-key': apiKey
             }
         });
-        return response.data.completion;
+        return response.data.content[0].text;
     } catch (error) {
         console.error('Error calling Anthropic API:', error);
         throw new Error('Failed to get response from Anthropic API');
