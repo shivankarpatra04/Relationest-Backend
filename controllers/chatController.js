@@ -311,6 +311,7 @@ async function callOpenAIAPI(prompt, apiKey) {
     }
 }
 
+// Updated Anthropic API call function
 async function callAnthropicAPI(userMessage, apiKey) {
     try {
         const response = await axios.post(
@@ -321,25 +322,44 @@ async function callAnthropicAPI(userMessage, apiKey) {
                     role: "user",
                     content: userMessage
                 }],
-                max_tokens: 1024
+                max_tokens: 1024,
+                system: "You are a helpful AI assistant providing relationship and communication advice."
             },
             {
                 headers: {
                     'Content-Type': 'application/json',
-                    'anthropic-version': '2023-06-01',
-                    'x-api-key': apiKey
+                    'x-api-key': apiKey,
+                    'anthropic-version': '2024-02-15'  // Updated version
                 }
             }
         );
 
-        if (!response.data?.content?.[0]?.text) {
+        // Check if the response has the expected structure
+        if (!response.data?.content) {
             throw new Error('Invalid response format from Anthropic API');
         }
 
+        // Extract the message content
         return response.data.content[0].text;
     } catch (error) {
-        console.error('Error calling Anthropic API:', error);
-        throw new Error(`Anthropic API error: ${error.message}`);
+        // Enhanced error logging
+        console.error('Anthropic API Error Details:', {
+            message: error.message,
+            response: error.response?.data,
+            status: error.response?.status,
+            headers: error.response?.headers
+        });
+
+        // More specific error messages based on status codes
+        if (error.response?.status === 400) {
+            throw new Error('Invalid request to Anthropic API. Please check your message format and API key.');
+        } else if (error.response?.status === 401) {
+            throw new Error('Invalid or expired Anthropic API key.');
+        } else if (error.response?.status === 429) {
+            throw new Error('Anthropic API rate limit exceeded. Please try again later.');
+        } else {
+            throw new Error(`Anthropic API error: ${error.message}`);
+        }
     }
 }
 
